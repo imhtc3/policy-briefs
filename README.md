@@ -31,6 +31,3 @@ python analysis.py
 
 The state-level numbers come from LibTech India's national tracker, which is compiled from the official NREGA dashboard. Wage figures come from PRS Legislative Research. Full sources are listed at the end of each brief.
 
-## Contact
-
-Prashant Yadav · [LinkedIn](https://linkedin.com/in/prashant-yadav-0a8090334) · yprashantrao12345@gmail.com
