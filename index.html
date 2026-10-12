@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Implementation Gaps</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400;1,6..72,500&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a parliamentary reading room. Sticky bar with two briefs as tabs; each brief reads top-down,
+   prose held to ~66ch, exhibits (charts, comparisons, question papers) step out to a wider measure. */
+:root{
+  --bg:#f5f6f2; --surface:#ffffff; --ink:#17201b; --muted:#5a655e; --rule:#dbe0d9; --soft:#eceee8;
+  --lok:#1d5c45;      /* Lok Sabha green: rural employment brief */
+  --rajya:#7a2638;    /* Rajya Sabha maroon: data protection brief */
+  --accent:var(--lok);
+  --rise:#0f72a0; --fall:#c4581c;   /* chart pair, validated for CVD + contrast */
+  --paper:#fbfaf5;  /* question-paper sheet */
+  --display:"Newsreader","Iowan Old Style","Georgia",serif;
+  --body:"Public Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#111513; --surface:#181d1a; --ink:#e4eae6; --muted:#9aa69f; --rule:#2c342f; --soft:#1f2522;
+    --lok:#6cc39b; --rajya:#e58fa1; --rise:#3b9fd6; --fall:#d06a32; --paper:#1b201d; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#111513; --surface:#181d1a; --ink:#e4eae6; --muted:#9aa69f; --rule:#2c342f; --soft:#1f2522;
+  --lok:#6cc39b; --rajya:#e58fa1; --rise:#3b9fd6; --fall:#d06a32; --paper:#1b201d; color-scheme:dark;
+}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+body.dpdp{--accent:var(--rajya)}
+*{box-sizing:border-box}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+/* top bar */
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--rule)}
+.bar-in{max-width:1040px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.mark{font-family:var(--display);font-size:1.15rem;font-weight:600;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.mark small{font-family:var(--mono);font-size:.68rem;font-weight:400;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+.tabs{display:flex;background:var(--soft);border:1px solid var(--rule);border-radius:999px;padding:3px}
+.tab{appearance:none;border:0;background:transparent;color:var(--muted);font:600 .82rem var(--body);padding:7px 14px;border-radius:999px;cursor:pointer;display:flex;align-items:center;gap:7px;white-space:nowrap}
+.tab .dot{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.5}
+.tab[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0 / .08)}
+.tab[data-t="mgnrega"][aria-selected="true"] .dot{background:var(--lok);opacity:1}
+.tab[data-t="dpdp"][aria-selected="true"] .dot{background:var(--rajya);opacity:1}
+
+/* page */
+.wrap{max-width:1040px;margin:0 auto;padding-inline:20px;padding-block:8px 64px}
+.prose{max-width:66ch}
+section{padding-block:34px 6px}
+.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:0 0 10px}
+h1{font-family:var(--display);font-weight:400;font-size:clamp(2.1rem,6vw,3.6rem);line-height:1.04;letter-spacing:-.02em;margin:0 0 18px;text-wrap:balance}
+h1 em{font-style:italic;color:var(--accent)}
+h2{font-family:var(--display);font-weight:600;font-size:clamp(1.45rem,3.4vw,1.85rem);line-height:1.15;letter-spacing:-.01em;margin:0 0 10px;text-wrap:balance}
+h3{font-size:1rem;margin:0}
+.lede{font-size:1.12rem;color:var(--ink);max-width:62ch;margin:0 0 6px}
+p{margin:0 0 14px}
+.muted{color:var(--muted)}
+.note{font-size:.8rem;color:var(--muted);margin-top:10px}
+.hero{padding-block:44px 8px;border-bottom:1px solid var(--rule)}
+
+/* promise gauge */
+.gauge{margin:30px 0 26px;position:relative}
+.g-track{position:relative;height:46px;border-radius:6px;background:var(--soft);border:1px solid var(--rule);overflow:hidden}
+.g-fill{position:absolute;inset:0 auto 0 0;background:var(--accent);opacity:.9;border-radius:5px 0 0 5px;transition:width 1.1s cubic-bezier(.2,.7,.2,1)}
+.g-tick{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink)}
+.g-labels{position:relative;height:58px;margin-top:6px;font-size:.78rem}
+.g-lab{position:absolute;transform:translateX(-50%);text-align:center;line-height:1.25;white-space:nowrap}
+.g-lab b{display:block;font-family:var(--mono);font-size:1rem;font-weight:500}
+.g-lab.left{transform:none;text-align:left}
+.g-lab.right{transform:translateX(-100%);text-align:right}
+.g-inside{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--bg);font:600 .8rem var(--body);white-space:nowrap}
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin-top:6px}
+.fig{background:var(--surface);padding:14px 16px}
+.fig b{display:block;font-family:var(--display);font-size:1.9rem;font-weight:400;line-height:1.1;font-variant-numeric:tabular-nums}
+.fig span{font-size:.82rem;color:var(--muted);line-height:1.35;display:block;margin-top:4px}
+
+/* switch comparison */
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin:6px 0 14px}
+.seg button{appearance:none;border:0;background:var(--surface);color:var(--muted);font:600 .82rem var(--body);padding:8px 14px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--rule)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--bg)}
+.cmp{border:1px solid var(--rule);border-radius:10px;background:var(--surface);overflow:hidden}
+.cmp-row{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:16px;padding:13px 18px;border-top:1px solid var(--rule);align-items:baseline}
+.cmp-row:first-child{border-top:0}
+.cmp-k{font-size:.8rem;color:var(--muted);font-weight:600}
+.cmp-v{min-width:0;transition:opacity .25s}
+.cmp-v.flash{animation:flash .5s}
+@keyframes flash{from{opacity:.2}to{opacity:1}}
+.chg{font-family:var(--mono);font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);border:1px solid currentColor;border-radius:4px;padding:1px 5px;margin-left:8px;white-space:nowrap}
+@media (max-width:520px){.cmp-row{grid-template-columns:1fr;gap:2px}}
+
+/* accordions */
+.acc{border-top:1px solid var(--rule);margin-top:10px}
+.acc details{border-bottom:1px solid var(--rule)}
+.acc summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;padding:15px 2px}
+.acc summary::-webkit-details-marker{display:none}
+.acc summary h3{font-size:1.02rem;font-weight:600}
+.acc .stat{font-family:var(--mono);font-size:.82rem;color:var(--accent);white-space:nowrap}
+.acc .chev{width:22px;height:22px;border-radius:50%;border:1px solid var(--rule);display:grid;place-items:center;transition:transform .2s;color:var(--muted)}
+.acc details[open] .chev{transform:rotate(45deg)}
+.acc .body{padding:0 2px 16px;max-width:66ch;color:var(--ink)}
+.tag{font-family:var(--mono);font-size:.68rem;color:var(--muted);border:1px solid var(--rule);border-radius:4px;padding:1px 6px;margin-right:8px}
+@media (max-width:520px){.acc summary{grid-template-columns:1fr auto}.acc .stat{display:none}}
+
+/* charts */
+.exhibit{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:18px 18px 12px;margin-top:14px}
+.ex-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+.ex-head h3{font-family:var(--display);font-size:1.2rem;font-weight:600}
+.ex-head p{margin:2px 0 0;font-size:.85rem;color:var(--muted)}
+.chart{position:relative;width:100%}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart text{fill:var(--muted);font-family:var(--body);font-size:12px}
+.chart .val{font-family:var(--mono);font-size:11px;fill:var(--ink)}
+.chart .lbl{fill:var(--ink)}
+.chart .grid{stroke:var(--rule)}
+.chart .zero{stroke:var(--muted)}
+.chart .hit{fill:transparent;cursor:pointer}
+.chart .row.dim .bar{opacity:.35}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);font-size:.8rem;line-height:1.4;padding:8px 10px;border-radius:6px;max-width:230px;z-index:5;box-shadow:0 4px 14px rgb(0 0 0 / .18)}
+.tip b{display:block;font-size:.85rem}
+.tip span{font-family:var(--mono);font-size:.76rem}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin-top:4px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-2px}
+.legend i.ring{background:var(--surface)!important;border:2px solid var(--rise);border-radius:50%}
+.legend i.dotc{border-radius:50%}
+.find{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px}
+.find div{border-top:2px solid var(--accent);padding-top:10px;font-size:.92rem}
+.find b{font-family:var(--display);font-size:1.4rem;font-weight:600;display:block;line-height:1.15;margin-bottom:2px}
+
+/* recommendations */
+.recs{counter-reset:r;display:grid;gap:0;margin-top:8px;max-width:72ch}
+.rec{counter-increment:r;display:grid;grid-template-columns:44px 1fr;gap:6px;padding:14px 0;border-top:1px solid var(--rule)}
+.rec::before{content:counter(r);font-family:var(--display);font-size:1.7rem;line-height:1;color:var(--accent)}
+.rec b{display:block;margin-bottom:2px}
+
+/* question papers */
+.papers{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;margin-top:14px}
+.paper{background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:18px 20px 16px;font-family:var(--display);font-size:1.02rem;line-height:1.5;position:relative;display:flex;flex-direction:column;box-shadow:0 1px 0 var(--rule),0 3px 0 -1px var(--paper),0 3px 0 0 var(--rule)}
+.paper-h{font-family:var(--mono);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:center;border-bottom:1px double var(--rule);padding-bottom:8px;margin-bottom:12px;line-height:1.6}
+.paper-h strong{color:var(--accent);font-weight:500;display:block}
+.paper ol{list-style:none;padding:0;margin:6px 0 12px;counter-reset:q}
+.paper li{counter-increment:q;padding-left:2em;position:relative;margin-bottom:6px}
+.paper li::before{content:"(" counter(q,lower-alpha) ")";position:absolute;left:0;font-style:italic;color:var(--muted)}
+.paper .to{font-style:italic;color:var(--muted);font-size:.92rem}
+.copy{margin-top:auto;align-self:flex-start;appearance:none;background:transparent;border:1px solid var(--rule);color:var(--ink);font:600 .76rem var(--body);padding:6px 11px;border-radius:6px;cursor:pointer}
+.copy:hover{border-color:var(--accent);color:var(--accent)}
+.zero-hour{margin-top:16px;border:1px solid var(--rule);border-radius:10px;background:var(--surface);display:grid;grid-template-columns:auto 1fr;overflow:hidden}
+.zh-clock{background:var(--accent);color:var(--bg);padding:16px;display:grid;place-items:center;text-align:center;font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;min-width:96px}
+.zh-clock b{font-family:var(--display);font-size:1.7rem;letter-spacing:0;display:block;text-transform:none;font-weight:600}
+.zh-body{padding:16px 18px;min-width:0}
+.zh-body p{margin:0 0 8px}
+.zh-body .k{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:block}
+
+/* timeline */
+.tl{position:relative;margin:26px 0 8px;padding-top:6px}
+.tl-line{position:absolute;left:0;right:0;top:27px;height:3px;background:var(--rule);border-radius:2px}
+.tl-prog{position:absolute;left:0;top:27px;height:3px;background:var(--accent);border-radius:2px;transition:width 1s}
+.tl-pts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;position:relative}
+.tl-pt{padding-top:44px;position:relative;min-width:0}
+.tl-pt::before{content:"";position:absolute;top:13px;left:0;width:30px;height:30px;border-radius:50%;background:var(--surface);border:3px solid var(--rule)}
+.tl-pt.done::before{background:var(--accent);border-color:var(--accent)}
+.tl-pt.next::before{border-color:var(--accent)}
+.tl-date{font-family:var(--mono);font-size:.8rem;font-weight:500}
+.tl-pt p{font-size:.88rem;margin:4px 0 0;color:var(--muted)}
+.pill{display:inline-block;font:600 .66rem var(--body);letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:2px 8px;margin-top:6px;border:1px solid var(--rule);color:var(--muted)}
+.tl-pt.done .pill{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+.tl-pt.next .pill{border-color:var(--accent);color:var(--accent)}
+.today{position:absolute;top:0;width:2px;height:56px;background:var(--ink);transform:translateX(-1px)}
+.today span{position:absolute;top:-2px;left:6px;font-family:var(--mono);font-size:.66rem;white-space:nowrap;color:var(--ink);background:var(--bg);padding:0 3px}
+@media (max-width:560px){
+  .tl-line,.tl-prog,.today{display:none}
+  .tl-pts{grid-template-columns:1fr;gap:0;border-left:3px solid var(--rule);margin-left:14px}
+  .tl-pt{padding:4px 0 18px 26px}
+  .tl-pt::before{top:4px;left:-17px;width:22px;height:22px}
+}
+.count{display:flex;gap:18px;align-items:baseline;flex-wrap:wrap;margin-top:14px;padding:14px 18px;border:1px solid var(--rule);border-radius:10px;background:var(--surface)}
+.count b{font-family:var(--display);font-size:2.4rem;font-weight:400;line-height:1;color:var(--accent);font-variant-numeric:tabular-nums}
+
+/* India vs GDPR */
+.vs{border:1px solid var(--rule);border-radius:10px;overflow:hidden;background:var(--surface);margin-top:14px}
+.vs-head,.vs-row{display:grid;grid-template-columns:minmax(110px,.8fr) 1fr 1fr 28px;gap:14px;padding:12px 16px;align-items:start}
+.vs-head{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--soft)}
+.vs-row{border-top:1px solid var(--rule);cursor:pointer;width:100%;text-align:left;appearance:none;background:transparent;border-left:0;border-right:0;border-bottom:0;color:inherit;font:inherit}
+.vs-row:hover{background:var(--soft)}
+.vs-row .k{font-weight:600;font-size:.88rem}
+.vs-row .in{color:var(--ink)}
+.vs-row .eu{color:var(--muted)}
+.vs-row .pm{color:var(--muted);font-size:1.1rem;line-height:1;transition:transform .2s;text-align:center}
+.vs-row[aria-expanded="true"] .pm{transform:rotate(45deg);color:var(--accent)}
+.vs-why{grid-column:1/-1;font-size:.88rem;color:var(--ink);background:var(--soft);border-radius:6px;padding:10px 12px;margin-top:4px}
+@media (max-width:600px){
+  .vs-head{display:none}
+  .vs-row{grid-template-columns:1fr 28px;gap:4px 10px}
+  .vs-row .k{grid-column:1}
+  .vs-row .pm{grid-column:2;grid-row:1}
+  .vs-row .in,.vs-row .eu{grid-column:1/-1;font-size:.9rem}
+  .vs-row .in::before{content:"India: ";font-weight:600}
+  .vs-row .eu::before{content:"EU: ";font-weight:600}
+}
+
+/* sources */
+.src summary{cursor:pointer;font-weight:600;padding:10px 0}
+.src ul{padding-left:18px;margin:4px 0 0;font-size:.88rem}
+.src li{margin-bottom:6px}
+footer{border-top:1px solid var(--rule);margin-top:40px;padding-top:18px;font-size:.8rem;color:var(--muted)}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+<style>[hidden]{display:none!important}img{max-width:100%}body{margin:0}</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-in">
+    <div class="mark">Implementation Gaps <small>Policy briefs · 2026</small></div>
+    <nav class="tabs" role="tablist" aria-label="Choose a brief">
+      <button class="tab" role="tab" id="tab-mgnrega" data-t="mgnrega" aria-controls="mgnrega" aria-selected="true"><span class="dot"></span>Rural employment</button>
+      <button class="tab" role="tab" id="tab-dpdp" data-t="dpdp" aria-controls="dpdp" aria-selected="false"><span class="dot"></span>Data protection</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ============ BRIEF 1: MGNREGA → VB-G RAM G ============ -->
+<article id="mgnrega" role="tabpanel" aria-labelledby="tab-mgnrega">
+
+  <div class="hero">
+    <p class="eyebrow">Rural employment · October 2026</p>
+    <h1>The law now promises <em>125 days</em> of work. Households were getting 48.</h1>
+    <p class="lede">VB-G RAM G replaced MGNREGA on 1 July 2026. It raises the guarantee, but the old one was rarely met. The real limits were funding, state capacity and accountability, and the new law shifts more of the bill to states.</p>
+
+    <div class="gauge" aria-label="Days of work per household">
+      <div class="g-track">
+        <div class="g-fill" id="g-fill" style="width:38.4%"></div>
+        <span class="g-inside">Average actually given</span>
+        <div class="g-tick" style="left:80%"></div>
+        <div class="g-tick" style="left:calc(100% - 2px)"></div>
+      </div>
+      <div class="g-labels">
+        <div class="g-lab" style="left:38.4%"><b>~48 days</b>average per household,<br>last decade</div>
+        <div class="g-lab" style="left:80%"><b>100</b>old guarantee</div>
+        <div class="g-lab right" style="left:100%"><b>125</b>new guarantee</div>
+      </div>
+    </div>
+
+    <div class="figs">
+      <div class="fig"><b>&lt;10%</b><span>of working households completed 100 days</span></div>
+      <div class="fig"><b>60:40</b><span>new Centre–state cost split (most states)</span></div>
+      <div class="fig"><b>2%</b><span>of unemployment allowance due in 2025-26 was paid</span></div>
+      <div class="fig"><b>₹95,692 cr</b><span>allocated to VB-G RAM G for 2026-27</span></div>
+    </div>
+  </div>
+
+  <section>
+    <p class="eyebrow">What changed</p>
+    <h2>Old law, new law</h2>
+    <p class="prose muted">Switch between the two to see what moved. Rows marked <span class="chg" style="margin:0">changed</span> differ between the laws.</p>
+    <div class="seg" role="group" aria-label="Choose law">
+      <button id="law-old" aria-pressed="false" data-law="old">MGNREGA, 2005</button>
+      <button id="law-new" aria-pressed="true" data-law="new">VB-G RAM G, 2025</button>
+    </div>
+    <div class="cmp" id="cmp"></div>
+    <p class="note">Budget 2026-27: VB-G RAM G ₹95,692 crore; MGNREGS ₹30,000 crore for the transition and pending dues, down 66% from ₹88,000 crore (2025-26 RE).</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Where it breaks down</p>
+    <h2>Six implementation gaps</h2>
+    <div class="acc" id="gaps"></div>
+  </section>
+
+  <section>
+    <p class="eyebrow">State-level analysis · FY 2024-25 vs FY 2023-24</p>
+    <h2>Work fell in 13 of 19 major states</h2>
+    <p class="prose">Nationally, persondays dropped 7.1%, from 288.8 to 268.4 crore. Switch the view to see how many registered workers can't be paid through the Aadhaar-based payment system. Hover or tap a state for its figures.</p>
+
+    <div class="exhibit">
+      <div class="ex-head">
+        <div><h3 id="pd-title">Change in persondays</h3><p id="pd-sub">% change, FY 2023-24 to FY 2024-25. West Bengal excluded: central funds stopped since March 2022.</p></div>
+        <div class="seg" role="group" aria-label="Choose measure" style="margin:0">
+          <button id="m-change" aria-pressed="true" data-m="change">Work change</button>
+          <button id="m-abps" aria-pressed="false" data-m="abps">Payment exclusion</button>
+        </div>
+      </div>
+      <div class="legend" id="pd-legend"></div>
+      <div class="chart" id="pd-chart"></div>
+    </div>
+
+    <div class="find">
+      <div><b>−34.8%</b>Odisha had the steepest fall, followed by Tamil Nadu (−25.1%) and Rajasthan (−15.9%).</div>
+      <div><b>63%</b>of Maharashtra's registered workers can't get Aadhaar-based payment, even as its work rose 39.7%.</div>
+      <div><b>0</b>persondays in West Bengal, where central funds have been stopped since March 2022.</div>
+    </div>
+
+    <div class="exhibit" style="margin-top:22px">
+      <div class="ex-head">
+        <div><h3>Wages paid vs wages promised</h3><p>₹ per day, 2025. Workers in 20 of 31 states and UTs got less than the notified rate.</p></div>
+      </div>
+      <div class="legend"><span><i class="ring"></i>Notified wage</span><span><i class="dotc" style="background:var(--fall)"></i>Average actually paid</span></div>
+      <div class="chart" id="wage-chart"></div>
+    </div>
+    <p class="note">Data: LibTech India national tracker (compiled from nrega.nic.in, April 2025); wages from the MGNREGA dashboard via PRS Legislative Research (February 2026).</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Recommendations</p>
+    <h2>What would close the gap</h2>
+    <div class="recs">
+      <div class="rec"><div><b>Publish normative allocations and their formula.</b>States should know their central ceiling before the year begins, so demand isn't turned away mid-year.</div></div>
+      <div class="rec"><div><b>A transition fund for low-capacity states.</b>Phase in the 40% share over 2–3 years for states whose own revenue is below the national median.</div></div>
+      <div class="rec"><div><b>Make delay compensation automatic.</b>Calculate it in the payment system and pay it without a claim. Manual claims have yielded only 2–8% of dues.</div></div>
+      <div class="rec"><div><b>Fund Panchayat staffing for audits.</b>Tie part of administrative funds to filling Panchayat Secretary posts, so every Gram Panchayat holds at least one social audit a year.</div></div>
+      <div class="rec"><div><b>Clear MGNREGA dues on a published schedule.</b>Report pending liabilities by state every quarter until they are cleared.</div></div>
+      <div class="rec"><div><b>Revise the wage base year.</b>Update the 2009-10 CPI-AL base so wages keep pace with inflation, as the Standing Committee recommended in 2024 and 2025.</div></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">For the House</p>
+    <h2>Draft Parliamentary Questions</h2>
+    <div class="papers" id="pq-mgnrega"></div>
+    <div class="zero-hour">
+      <div class="zh-clock">Zero<b>Hour</b>note</div>
+      <div class="zh-body">
+        <p><span class="k">Issue</span>Unpaid unemployment allowance under the rural employment guarantee.</p>
+        <p><span class="k">Point to make</span>The law promises an allowance when work isn't given within 15 days, yet only 2% of what was due in 2025-26 was paid. The guarantee is now 125 days, but a promise is only as strong as its enforcement.</p>
+        <p style="margin:0"><span class="k">Ask</span>Publish state-wise allowance dues every quarter and pay them automatically through the payment system.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <details class="src">
+      <summary>Sources</summary>
+      <ul>
+        <li><a href="https://prsindia.org/files/budget/budget_parliament/2026/DfG_Analysis_2026-27-Rural_Development.pdf" target="_blank" rel="noopener">Demand for Grants 2026-27 Analysis: Rural Development</a>, PRS Legislative Research, Feb 2026</li>
+        <li><a href="https://libtech.in/wp-content/uploads/2025/05/LibTech_India_Tracker_FY-2024-25-English.pdf" target="_blank" rel="noopener">The Missing Work: National Review of MGNREGA (FY 2024-25)</a>, LibTech India, Apr 2025</li>
+        <li><a href="https://www.theweek.in/wire-updates/national/2026/02/01/over-rs-95-000-crore-allocated-for-vb-g-ram-g-mgnrega-gets-rs-30-000-crore-in-budget.html" target="_blank" rel="noopener">Budget 2026-27 allocations for VB-G RAM G and MGNREGA</a>, PTI via The Week</li>
+        <li><a href="https://www.downtoearth.org.in/amp/story/governance/vb-g-ram-g-receives-rs-95692-crore-will-not-meet-125-days-of-promised-employment" target="_blank" rel="noopener">NREGA Sangharsh Morcha on pending liabilities</a>, Down To Earth</li>
+        <li><a href="https://morungexpress.com/centre-releases-rs-25863-crore-to-states-under-vb-g-ram-g-scheme" target="_blank" rel="noopener">First instalment of ₹25,863 crore released</a>, IANS, Jul 2026</li>
+        <li><a href="https://telanganatoday.com/telangana-govt-to-roll-out-vb-g-ram-g-challenge-centre-in-supreme-court" target="_blank" rel="noopener">Telangana to challenge VB-G RAM G in the Supreme Court</a>, Telangana Today, Aug 2026</li>
+        <li><a href="https://easemyprep.in/news/2755-shivraj-singh-chouhan-releases-first-installment-of-25863-crore-to-states-for-vb" target="_blank" rel="noopener">Wage floor of ₹300 and rollout details</a>, summary of PIB release, Jul 2026</li>
+      </ul>
+    </details>
+  </section>
+</article>
+
+<!-- ============ BRIEF 2: DPDP ACT ============ -->
+<article id="dpdp" role="tabpanel" aria-labelledby="tab-dpdp" hidden>
+
+  <div class="hero">
+    <p class="eyebrow">Data protection · October 2026</p>
+    <h1>A privacy law that leaves <em>the government</em> largely unchecked</h1>
+    <p class="lede">The Digital Personal Data Protection Act, 2023 gives people rights over their data and lets the regulator fine companies up to ₹250 crore per breach. But it lets the government exempt itself, keeps the regulator close to the executive, and weakens the Right to Information Act.</p>
+
+    <div class="tl" id="tl">
+      <div class="tl-line"></div>
+      <div class="tl-prog" id="tl-prog"></div>
+      <div class="today" id="today"><span>Today</span></div>
+      <div class="tl-pts">
+        <div class="tl-pt" data-d="2025-11-14"><div class="tl-date">14 Nov 2025</div><p>Rules notified; Data Protection Board set up</p><span class="pill"></span></div>
+        <div class="tl-pt" data-d="2026-11-14"><div class="tl-date">Nov 2026</div><p>Consent managers can register</p><span class="pill"></span></div>
+        <div class="tl-pt" data-d="2027-05-14"><div class="tl-date">Mid-May 2027</div><p>All core duties: consent, security, breach reporting, children's data</p><span class="pill"></span></div>
+      </div>
+    </div>
+    <div class="count"><b id="days-left">—</b><span class="muted">days until the core duties take effect. That is the window for Parliament to add safeguards.</span></div>
+  </div>
+
+  <section>
+    <p class="eyebrow">What the law requires</p>
+    <h2>Duties on anyone who handles personal data</h2>
+    <div class="figs" style="margin-top:12px">
+      <div class="fig"><b>Consent</b><span>Clear, specific consent, or a listed "legitimate use"</span></div>
+      <div class="fig"><b>Rights</b><span>Access, correction, erasure and grievance redress</span></div>
+      <div class="fig"><b>Under 18</b><span>Verifiable parental consent for children's data</span></div>
+      <div class="fig"><b>₹250 cr</b><span>Maximum penalty per instance, set by the Board</span></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Issues and concerns</p>
+    <h2>Five weak points</h2>
+    <div class="acc" id="concerns"></div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Benchmark</p>
+    <h2>India's law next to Europe's GDPR</h2>
+    <p class="prose">Simpler and lighter for businesses, weaker on regulator independence and on remedies for individuals. Tap a row to see why the difference matters.</p>
+    <div class="vs" id="vs">
+      <div class="vs-head"><span>Feature</span><span>India · DPDP Act</span><span>EU · GDPR</span><span></span></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Recommendations</p>
+    <h2>Safeguards to add before May 2027</h2>
+    <div class="recs">
+      <div class="rec"><div><b>Restore the public-interest test in RTI Section 8(1)(j).</b>Personal information should stay disclosable where it relates to public activity, or where the public interest outweighs privacy.</div></div>
+      <div class="rec"><div><b>Make the Board independent.</b>Add the Chief Justice of India (or a nominee) and the Leader of the Opposition to its selection committee. Give members fixed tenure, and have the Board report to Parliament, not MeitY.</div></div>
+      <div class="rec"><div><b>Limit Section 17 exemptions.</b>Every exemption should be written, time-bound, necessary and proportionate, laid before Parliament and independently reviewed.</div></div>
+      <div class="rec"><div><b>Add compensation.</b>Let the Board award compensation to people harmed by a breach.</div></div>
+      <div class="rec"><div><b>Publish an annual report.</b>The Board should table yearly figures on complaints, penalties and government exemptions in Parliament.</div></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">For the House</p>
+    <h2>Draft Parliamentary Questions</h2>
+    <div class="papers" id="pq-dpdp"></div>
+    <div class="zero-hour">
+      <div class="zh-clock">Zero<b>Hour</b>note</div>
+      <div class="zh-body">
+        <p><span class="k">Issue</span>The data protection law has quietly weakened the RTI Act.</p>
+        <p><span class="k">Point to make</span>Section 44(3) exempts all personal information from RTI disclosure. That can shield records on public officials and public money. Citizens' ability to hold government to account should not shrink in the name of privacy.</p>
+        <p style="margin:0"><span class="k">Ask</span>Restore the public-interest test in Section 8(1)(j) before the core duties take effect in May 2027.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <details class="src">
+      <summary>Sources</summary>
+      <ul>
+        <li><a href="https://www.hoganlovells.com/en/publications/indias-digital-personal-data-protection-act-2023-brought-into-force-" target="_blank" rel="noopener">DPDP Act and Rules brought into force</a>, Hogan Lovells, Nov 2025</li>
+        <li><a href="https://webiis10.mondaq.com/india/data-protection/1706878/indias-digital-personal-data-protection-act-phased-rollout-and-key-compliance-milestones" target="_blank" rel="noopener">Phased rollout and compliance milestones</a>, Mondaq, Nov 2025</li>
+        <li><a href="https://www.livelaw.in/amp/top-stories/supreme-court-refers-pleas-challenging-dpdp-act-amendment-to-rti-act-to-larger-bench-523266" target="_blank" rel="noopener">Supreme Court refers RTI challenge to a larger bench</a>, LiveLaw</li>
+        <li><a href="https://moneylife.in/article/supreme-court-issues-notice-on-pleas-challenging-dpdp-acts-impact-on-rti-act/80577.html" target="_blank" rel="noopener">Supreme Court issues notice on DPDP pleas</a>, Moneylife, May 2026</li>
+        <li><a href="https://www.livelaw.in/articles/india-data-protection-board-542731" target="_blank" rel="noopener">Is the Data Protection Board independent?</a>, LiveLaw, Jul 2026</li>
+        <li><a href="https://thewire.in/rights/regressive-amendments-to-rti-act-ncpri-flags-concerns-over-digital-personal-data-protection-bill" target="_blank" rel="noopener">NCPRI concerns on the DPDP Bill</a>, The Wire</li>
+        <li><a href="https://eparlib.sansad.in/bitstream/123456789/2991382/1/2908.pdf" target="_blank" rel="noopener">Zero Hour mention on Section 44(3)</a>, Lok Sabha Digital Library</li>
+      </ul>
+    </details>
+  </section>
+</article>
+
+<footer>Figures are as of the dates noted in each section and its sources. Draft questions are illustrative, prepared for research purposes.</footer>
+</main>
+
+<script>
+(function(){
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---------- tabs ---------- */
+function show(t){
+  document.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-selected",b.dataset.t===t));
+  $("#mgnrega").hidden=t!=="mgnrega"; $("#dpdp").hidden=t!=="dpdp";
+  document.body.classList.toggle("dpdp",t==="dpdp");
+  try{localStorage.setItem("brief",t)}catch(e){}
+  if(location.hash!=="#"+t) history.replaceState(null,"","#"+t);
+  if(t==="mgnrega") requestAnimationFrame(drawCharts); else requestAnimationFrame(timeline);
+}
+document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>{show(b.dataset.t);window.scrollTo({top:0,behavior:"smooth"})}));
+document.querySelector(".tabs").addEventListener("keydown",e=>{
+  if(e.key!=="ArrowRight"&&e.key!=="ArrowLeft")return;
+  const n=document.querySelector('.tab[aria-selected="false"]'); n.focus(); show(n.dataset.t);
+});
+
+/* ---------- law comparison ---------- */
+const LAW=[
+  ["Days guaranteed","100 per household","125 per household",1],
+  ["Funding model","Demand-driven: funds follow work demanded","Normative state-wise allocation set by the Centre; anything beyond it is paid by the state",1],
+  ["Who pays","Centre paid 100% of wages and 75% of materials, about 90% of total spending","60:40 Centre–state (90:10 for North-Eastern and Himalayan states)",1],
+  ["Minimum wage","Notified state-wise, linked to CPI-AL","Notified state-wise; no state below ₹300 a day",1],
+  ["Unemployment allowance","Due if work isn't given within 15 days; paid by states","Same provision; still paid by states",0],
+  ["Monitoring","Social audits by Gram Sabhas","Social audits plus face authentication and geo-tagging",1],
+];
+let law="new";
+function renderLaw(flash){
+  $("#cmp").innerHTML=LAW.map(r=>`<div class="cmp-row"><div class="cmp-k">${r[0]}</div><div class="cmp-v${flash?" flash":""}">${esc(law==="old"?r[1]:r[2])}${r[3]?'<span class="chg">changed</span>':""}</div></div>`).join("");
+  document.querySelectorAll("[data-law]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.law===law));
+}
+document.querySelectorAll("[data-law]").forEach(b=>b.addEventListener("click",()=>{law=b.dataset.law;renderLaw(true)}));
+renderLaw();
+
+/* ---------- accordions ---------- */
+function acc(el,items){
+  el.innerHTML=items.map(it=>`<details><summary><h3>${it.tag?`<span class="tag">${it.tag}</span>`:""}${esc(it.t)}</h3><span class="stat">${it.s||""}</span><span class="chev" aria-hidden="true">+</span></summary><div class="body">${it.b}</div></details>`).join("");
+}
+acc($("#gaps"),[
+  {t:"The guarantee was rarely met, even at 100 days",s:"~48 days avg",b:"Over the past decade, households averaged about 48 days of work a year, and fewer than 10% completed 100 days. The Economic Survey 2023-24 linked delivery to each state's institutional capacity, not just to demand."},
+  {t:"The cost shifts to states",s:"10% → 40%",b:"States previously funded roughly 10% of spending. Under the 60:40 split, poorer states must find much larger sums, and any work beyond the Centre's normative allocation is fully on them. Telangana has implemented the scheme but announced a Supreme Court challenge to protect state interests."},
+  {t:"Wages paid below notified rates",s:"20 of 31 states",b:"As of December 2025, workers in 20 of 31 states and UTs received less than the notified wage. In Rajasthan, workers were paid ₹221 a day on average against a notified ₹281."},
+  {t:"Unemployment allowance is almost never paid",s:"2% paid",b:"Between 2019-20 and 2024-25, only about 8% of the allowance due was paid. In 2025-26 (as of February 2026), the figure was 2%. VB-G RAM G keeps the same provision, and states still pay it."},
+  {t:"Social audits don't reach every village",s:"63% of GPs",b:"By December 2025, only 63% of 2.7 lakh Gram Panchayats had held at least one social audit that year. One Panchayat Secretary manages 17 Gram Panchayats on average."},
+  {t:"Old dues eat into the transition budget",s:"~₹15,000 cr",b:"Worker groups estimate about ₹15,000 crore in pending MGNREGA liabilities, which could absorb half of the ₹30,000 crore transition allocation."},
+]);
+acc($("#concerns"),[
+  {tag:"S. 44(3)",t:"The RTI Act is weakened",b:"Section 8(1)(j) of the RTI Act used to allow personal information to be released when it related to public activity or the larger public interest. The DPDP Act replaced that balancing test with a blanket exemption for all personal information. Transparency groups such as NCPRI argue this could block access to records on public officials and spending. In 2026 the Supreme Court issued notice on these challenges and referred them to a larger bench, though it declined to stay the Act."},
+  {tag:"S. 18",t:"The Board's independence",b:"The Central Government appoints the Board's chair and members on the advice of a selection committee it also constitutes, and the Board reports to MeitY. Critics question whether it can rule impartially on complaints against government agencies."},
+  {tag:"S. 17",t:"The government can exempt itself",b:"The Centre can exempt any state agency it notifies, for example on grounds of security or public order. The Act sets no test of necessity or proportionality, and no independent review."},
+  {tag:"Rule 23",t:"Secret government access to data",b:"The government can demand information from companies. In national security cases, Rule 23(2) bars them from telling users their data was shared. This rule is also under challenge."},
+  {tag:"Remedy",t:"No compensation for individuals",b:"Penalties go to the government. A person whose data is misused has no statutory right to compensation from the Board."},
+]);
+
+/* ---------- India vs GDPR ---------- */
+const VS=[
+  ["Regulator","Board appointed by the Central Government","Independent supervisory authorities","A regulator chosen by the executive must judge complaints against the executive. Independence decides whether those rulings are trusted."],
+  ["State exemptions","Broad, by government notification","Narrower; must be necessary and proportionate","Without a proportionality test, an exemption can cover far more data and agencies than the purpose needs."],
+  ["Maximum fine","₹250 crore per instance","€20 million or 4% of global turnover","A turnover-linked cap scales with the size of a company. A fixed cap matters less to the largest firms."],
+  ["Compensation","None for individuals","Right to compensation","Fines punish the company, but the person harmed gets nothing back under India's law."],
+  ["Data portability","Not included","Included","Portability lets people move their data between services, which also strengthens competition."],
+  ["Cross-border transfer","Allowed except to blacklisted countries","Allowed to countries with adequate protection, or with safeguards","India starts from 'allowed unless barred'. The EU starts from 'allowed only where protection is adequate'."],
+];
+const vs=$("#vs");
+VS.forEach((r,i)=>{
+  const b=document.createElement("button");
+  b.className="vs-row"; b.id="vs-"+i; b.setAttribute("aria-expanded","false");
+  b.innerHTML=`<span class="k">${r[0]}</span><span class="in">${esc(r[1])}</span><span class="eu">${esc(r[2])}</span><span class="pm" aria-hidden="true">+</span><span class="vs-why" hidden>${esc(r[3])}</span>`;
+  b.addEventListener("click",()=>{const o=b.getAttribute("aria-expanded")==="true";b.setAttribute("aria-expanded",!o);b.querySelector(".vs-why").hidden=o});
+  vs.appendChild(b);
+});
+
+/* ---------- question papers ---------- */
+function papers(el,ministry,qs){
+  el.innerHTML=qs.map((q,i)=>{
+    const text=`${q.type} question\nTo be asked of the Minister of ${ministry}\n\nWill the Minister be pleased to state:\n`+q.parts.map((p,j)=>`(${"abc"[j]}) ${p}`).join("\n");
+    return `<div class="paper"><div class="paper-h"><strong>${q.type} question</strong>Ministry of ${ministry}</div>
+      <div class="to">Will the Minister be pleased to state:</div>
+      <ol>${q.parts.map(p=>`<li>${esc(p)}</li>`).join("")}</ol>
+      <button class="copy" data-text="${esc(text)}">Copy question</button></div>`;
+  }).join("");
+}
+papers($("#pq-mgnrega"),"Rural Development",[
+  {type:"Starred",parts:["the state-wise normative allocation fixed under VB-G RAM G for 2026-27, and the criteria used;","the number of states that have released their full 40% matching share since 1 July 2026; and","the steps taken to ensure work demand is not denied once a state's normative allocation is exhausted?"]},
+  {type:"Unstarred",parts:["the state-wise amount of unemployment allowance and delay compensation due and paid under MGNREGA and VB-G RAM G from 2023-24 to date; and","whether the Government proposes to automate such payments?"]},
+  {type:"Unstarred",parts:["the state-wise pending liabilities under MGNREGA as of 1 July 2026; and","the timeline for clearing them?"]},
+]);
+papers($("#pq-dpdp"),"Electronics and Information Technology",[
+  {type:"Starred",parts:["the number of complaints received by the Data Protection Board since November 2025, and the number disposed of;","the number of RTI applications rejected under the amended Section 8(1)(j) since the DPDP Act came into force; and","whether the Government proposes to restore the public-interest test in that clause?"]},
+  {type:"Unstarred",parts:["the list of government agencies notified as exempt under Section 17 of the DPDP Act, with the grounds for each; and","whether such notifications are subject to any independent review?"]},
+  {type:"Unstarred",parts:["the steps taken to prepare small businesses and startups for compliance by May 2027?"]},
+]);
+document.addEventListener("click",async e=>{
+  const b=e.target.closest(".copy"); if(!b)return;
+  const t=b.dataset.text;
+  try{await navigator.clipboard.writeText(t);b.textContent="Copied";}
+  catch(err){
+    const r=document.createRange();r.selectNodeContents(b.parentElement.querySelector("ol"));
+    const s=getSelection();s.removeAllRanges();s.addRange(r);b.textContent="Selected: copy it";
+  }
+  setTimeout(()=>b.textContent="Copy question",1800);
+});
+
+/* ---------- charts ---------- */
+const PD=[ // state, persondays 23-24, 24-25 (crore), % all workers ABPS-ineligible
+  ["Odisha",18.28,11.92,10.4],["Tamil Nadu",40.87,30.61,3.6],["Rajasthan",37.52,31.57,24.7],["Gujarat",4.93,4.31,58.2],
+  ["Punjab",3.51,3.14,20.0],["Kerala",9.95,9.08,17.5],["Jharkhand",10.97,10.09,37.9],["Andhra Pradesh",25.55,24.23,1.6],
+  ["Karnataka",13.85,13.14,33.3],["Madhya Pradesh",19.96,18.97,28.2],["Haryana",1.23,1.18,36.0],["Uttarakhand",1.97,1.90,0.0],
+  ["Uttar Pradesh",34.52,33.63,9.4],["Telangana",12.09,12.22,33.3],["Chhattisgarh",12.77,13.22,3.8],["Jammu and Kashmir",3.75,4.08,20.8],
+  ["Bihar",22.05,24.99,33.3],["Himachal Pradesh",3.44,3.95,28.6],["Maharashtra",11.60,16.21,63.2]
+].map(r=>({s:r[0],a:r[1],b:r[2],chg:(r[2]-r[1])/r[1]*100,abps:r[3]}));
+const WAGE=[["Rajasthan",281,221],["Tamil Nadu",336,268],["Telangana",307,259],["Andhra Pradesh",307,268],["Gujarat",288,264],["Karnataka",370,342],["Chhattisgarh",261,245]];
+let metric="change";
+
+function tipAt(box,html,x,y){
+  let t=box.querySelector(".tip"); if(!t){t=document.createElement("div");t.className="tip";box.appendChild(t)}
+  t.innerHTML=html; t.hidden=false;
+  const bw=box.clientWidth, tw=t.offsetWidth;
+  t.style.left=Math.max(0,Math.min(bw-tw,x-tw/2))+"px"; t.style.top=(y-t.offsetHeight-10)+"px";
+}
+function hideTip(box){const t=box.querySelector(".tip"); if(t)t.hidden=true}
+
+function drawPD(){
+  const box=$("#pd-chart"), W=Math.max(300,box.clientWidth); if(!box.offsetParent)return;
+  const narrow=W<520, labW=narrow?104:150, rowH=narrow?24:26, top=22, valW=46;
+  const data=[...PD].sort((p,q)=>metric==="change"?q.chg-p.chg:q.abps-p.abps);
+  const H=top+data.length*rowH+8;
+  let lo,hi,ticks;
+  if(metric==="change"){lo=-40;hi=40;ticks=[-40,-20,0,20,40]}else{lo=0;hi=70;ticks=[0,20,40,60]}
+  const x0=labW, x1=W-valW, sx=v=>x0+(Math.max(lo,Math.min(hi,v))-lo)/(hi-lo)*(x1-x0);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${metric==="change"?"Change in persondays by state":"Share of workers ineligible for Aadhaar-based payment by state"}">`;
+  ticks.forEach(t=>{s+=`<line class="${t===0&&metric==="change"?"zero":"grid"}" x1="${sx(t)}" x2="${sx(t)}" y1="${top-6}" y2="${H-4}" stroke-width="1"/><text x="${sx(t)}" y="${top-10}" text-anchor="middle">${t}%</text>`});
+  data.forEach((d,i)=>{
+    const y=top+i*rowH, cy=y+rowH/2, v=metric==="change"?d.chg:d.abps;
+    const xa=metric==="change"?sx(Math.min(0,v)):sx(0), xb=metric==="change"?sx(Math.max(0,v)):sx(v);
+    const col=metric==="change"?(v<0?"var(--fall)":"var(--rise)"):"var(--rise)";
+    const clipped=metric==="change"&&Math.abs(v)>hi;
+    const bh=rowH-9;
+    s+=`<g class="row" data-i="${i}"><text class="lbl" x="${labW-10}" y="${cy+4}" text-anchor="end">${d.s}</text>`;
+    s+=`<rect class="bar" x="${xa}" y="${cy-bh/2}" width="${Math.max(1.5,xb-xa)}" height="${bh}" rx="3" fill="${col}"/>`;
+    const lx=metric==="change"?(v<0?xa-5:xb+5):xb+5, anc=metric==="change"&&v<0?"end":"start";
+    const txt=(v>0&&metric==="change"?"+":"")+v.toFixed(1)+"%"+(clipped?" ›":"");
+    if(metric==="change"&&v<0&&lx<labW+30) s+=`<text class="val" x="${xa+5}" y="${cy+4}" text-anchor="start" style="fill:var(--bg)">${txt}</text>`;
+    else s+=`<text class="val" x="${lx}" y="${cy+4}" text-anchor="${anc}">${txt}</text>`;
+    s+=`<rect class="hit" x="0" y="${y}" width="${W}" height="${rowH}"/></g>`;
+  });
+  s+="</svg>"; box.innerHTML=s;
+  box.querySelectorAll(".row").forEach(g=>{
+    const d=data[+g.dataset.i];
+    const html=`<b>${d.s}</b><span>Persondays: ${d.a.toFixed(2)} → ${d.b.toFixed(2)} cr (${d.chg>0?"+":""}${d.chg.toFixed(1)}%)</span><br><span>Workers not ABPS-eligible: ${d.abps.toFixed(1)}%</span>`;
+    const on=e=>{box.querySelectorAll(".row").forEach(r=>r.classList.toggle("dim",r!==g));const rb=box.getBoundingClientRect(),gb=g.getBoundingClientRect();tipAt(box,html,(e.clientX||gb.left+gb.width/2)-rb.left,gb.top-rb.top)};
+    g.addEventListener("mouseenter",on); g.addEventListener("click",on);
+  });
+  box.onmouseleave=()=>{box.querySelectorAll(".row").forEach(r=>r.classList.remove("dim"));hideTip(box)};
+  $("#pd-title").textContent=metric==="change"?"Change in persondays":"Workers who can't get Aadhaar-based payment";
+  $("#pd-sub").textContent=metric==="change"?"% change, FY 2023-24 to FY 2024-25. West Bengal excluded: central funds stopped since March 2022.":"% of all registered workers ineligible for the Aadhaar-based payment system, April 2025.";
+  $("#pd-legend").innerHTML=metric==="change"?'<span><i style="background:var(--rise)"></i>Work rose</span><span><i style="background:var(--fall)"></i>Work fell</span>':"";
+}
+function drawWage(){
+  const box=$("#wage-chart"), W=Math.max(300,box.clientWidth); if(!box.offsetParent)return;
+  const narrow=W<520, labW=narrow?104:150, rowH=34, top=22, rpad=narrow?62:80;
+  const H=top+WAGE.length*rowH+6, lo=200, hi=380, x0=labW, x1=W-rpad, sx=v=>x0+(v-lo)/(hi-lo)*(x1-x0);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Notified versus paid daily wage by state">`;
+  [200,250,300,350].forEach(t=>s+=`<line class="grid" x1="${sx(t)}" x2="${sx(t)}" y1="${top-6}" y2="${H-4}"/><text x="${sx(t)}" y="${top-10}" text-anchor="middle">₹${t}</text>`);
+  WAGE.forEach((w,i)=>{
+    const cy=top+i*rowH+rowH/2, gap=((w[1]-w[2])/w[1]*100);
+    s+=`<g class="row" data-i="${i}"><text class="lbl" x="${labW-10}" y="${cy+4}" text-anchor="end">${w[0]}</text>
+      <line x1="${sx(w[2])}" x2="${sx(w[1])}" y1="${cy}" y2="${cy}" stroke="var(--muted)" stroke-width="2" opacity=".5"/>
+      <circle cx="${sx(w[2])}" cy="${cy}" r="6" fill="var(--fall)" stroke="var(--surface)" stroke-width="2"/>
+      <circle cx="${sx(w[1])}" cy="${cy}" r="6" fill="var(--surface)" stroke="var(--rise)" stroke-width="2.5"/>
+      <text class="val" x="${sx(w[1])+12}" y="${cy+4}">−${gap.toFixed(0)}%</text>
+      <rect class="hit" x="0" y="${cy-rowH/2}" width="${W}" height="${rowH}"/></g>`;
+  });
+  s+="</svg>"; box.innerHTML=s;
+  box.querySelectorAll(".row").forEach(g=>{
+    const w=WAGE[+g.dataset.i];
+    const on=e=>{const rb=box.getBoundingClientRect(),gb=g.getBoundingClientRect();tipAt(box,`<b>${w[0]}</b><span>Notified ₹${w[1]} · Paid ₹${w[2]}</span><br><span>Shortfall ₹${w[1]-w[2]} a day (${((w[1]-w[2])/w[1]*100).toFixed(1)}%)</span>`,(e.clientX||gb.left+gb.width/2)-rb.left,gb.top-rb.top)};
+    g.addEventListener("mouseenter",on); g.addEventListener("click",on);
+  });
+  box.onmouseleave=()=>hideTip(box);
+}
+function drawCharts(){drawPD();drawWage()}
+document.querySelectorAll("[data-m]").forEach(b=>b.addEventListener("click",()=>{
+  metric=b.dataset.m; document.querySelectorAll("[data-m]").forEach(x=>x.setAttribute("aria-pressed",x===b)); drawPD();
+}));
+let rt; addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>{drawCharts();timeline()},120)});
+
+/* ---------- timeline ---------- */
+function timeline(){
+  const now=new Date(), pts=[...document.querySelectorAll(".tl-pt")];
+  const ds=pts.map(p=>new Date(p.dataset.d+"T00:00:00"));
+  let nextSet=false;
+  pts.forEach((p,i)=>{
+    p.classList.remove("done","next");
+    const pill=p.querySelector(".pill");
+    if(ds[i]<=now){p.classList.add("done");pill.textContent="In force"}
+    else if(!nextSet){p.classList.add("next");pill.textContent="Next";nextSet=true}
+    else pill.textContent="Upcoming";
+  });
+  // position the today marker between the evenly spaced milestones
+  const tl=$("#tl"), cols=pts.map(p=>p.offsetLeft+15);
+  let x;
+  if(now<=ds[0])x=cols[0]; else if(now>=ds[2])x=cols[2];
+  else{const k=now<ds[1]?0:1; x=cols[k]+(cols[k+1]-cols[k])*((now-ds[k])/(ds[k+1]-ds[k]))}
+  $("#today").style.left=x+"px"; $("#tl-prog").style.width=x+"px";
+  const left=Math.ceil((ds[2]-now)/864e5);
+  $("#days-left").textContent=left>0?left.toLocaleString("en-IN"):"0";
+}
+
+/* ---------- boot ---------- */
+let start="mgnrega";
+const h=location.hash.replace("#","");
+if(h==="dpdp"||h==="mgnrega")start=h; else{try{const v=localStorage.getItem("brief");if(v==="dpdp"||v==="mgnrega")start=v}catch(e){}}
+show(start);
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{drawCharts();timeline()});
+})();
+</script>
+
+</body>
+</html>
