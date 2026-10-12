@@ -1,6 +1,3 @@
-# Policy Briefs
-
-I study Data Science and AI at IIT Madras, and I've been getting more interested in what happens to laws and schemes after they're passed. These are two briefs I wrote to work through that: one on rural employment, one on data protection. Each tries to answer the same few questions. What does the law promise? Where does it fall short in practice? What could Parliament actually ask or change?
 
 ## The briefs
 
